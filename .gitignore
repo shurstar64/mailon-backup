@@ -1,0 +1,40 @@
+# Secrets - NEVER commit
+.env
+
+# Data and logs
+data/
+logs/
+
+# Python
+.venv/
+venv/
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+*.egg-info/
+.pytest_cache/
+
+# OS
+Thumbs.db
+.DS_Store
+
+# IDE
+.vscode/
+.idea/
+
+# Browser state (may contain session cookies)
+*.state.json
+auth-state.json
+
+# Local codegraph index (junction to user home)
+.codegraph/
+
+# Local AI agent state (plans, session artifacts)
+.omo/
+
+# Public release extras
+.claude/
+skills-lock.json
+.env.local
+.venv-check/

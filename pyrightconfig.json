@@ -1,0 +1,11 @@
+{
+  "venvPath": ".",
+  "venv": ".venv",
+  "pythonVersion": "3.13",
+  "pythonPlatform": "Windows",
+  "include": ["mailon", "tests"],
+  "exclude": ["**/__pycache__", ".venv", "data", "logs", "**/.venv/**", "**/site-packages/**"],
+  "ignore": [".venv", "**/site-packages/**"],
+  "typeCheckingMode": "basic",
+  "reportMissingImports": "warning"
+}
