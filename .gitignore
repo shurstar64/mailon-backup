@@ -4,6 +4,7 @@
 # Data and logs
 data/
 logs/
+staging/
 
 # Python
 .venv/
