@@ -145,12 +145,41 @@ def run_extract_entities(dry_run: bool = False) -> int:
         return 1
 
 
+def run_wiki_sync(dry_run: bool = False) -> int:
+    """Execute the wiki sync script."""
+    cmd = [sys.executable, "-m", "scripts.sync_to_wiki"]
+    if dry_run:
+        cmd.append("--dry-run")
+
+    log.info("Running: %s", " ".join(cmd))
+    try:
+        result = subprocess.run(
+            cmd,
+            cwd=PROJECT_ROOT,
+            capture_output=True,
+            text=True,
+            timeout=120,  # 2 minute timeout
+        )
+        if result.returncode != 0:
+            log.error("Wiki sync failed:\n%s", result.stderr)
+        else:
+            log.info("Wiki sync completed:\n%s", result.stdout)
+        return result.returncode
+    except subprocess.TimeoutExpired:
+        log.error("Wiki sync timed out after 2 minutes")
+        return 1
+    except Exception as e:
+        log.error("Failed to run wiki sync: %s", e)
+        return 1
+
+
 def main() -> int:
     """Main entry point for post-sync hook."""
     parser = argparse.ArgumentParser(description="Post-sync hook for LLM Wiki ingestion")
     parser.add_argument("--force", action="store_true", help="Force trigger even if no new mails")
     parser.add_argument("--dry-run", action="store_true", help="Dry run (no actual changes)")
     parser.add_argument("--skip-extract", action="store_true", help="Skip entity extraction")
+    parser.add_argument("--sync-wiki", action="store_true", help="Also sync to LLM Wiki")
     args = parser.parse_args()
 
     setup_logging()
@@ -178,6 +207,12 @@ def main() -> int:
         if ret != 0:
             log.warning("Entity extraction failed with code %d (non-fatal)", ret)
             # Don't fail the whole hook for extraction issues
+
+    # Run wiki sync (if requested)
+    if args.sync_wiki:
+        ret = run_wiki_sync(dry_run=args.dry_run)
+        if ret != 0:
+            log.warning("Wiki sync failed with code %d (non-fatal)", ret)
 
     log.info("Post-sync hook completed successfully")
     return 0

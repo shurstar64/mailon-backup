@@ -29,6 +29,16 @@
     "hook:post-sync": "python -m hooks.post_sync",
     "hook:post-sync:force": "python -m hooks.post_sync --force",
     "hook:post-sync:dry": "python -m hooks.post_sync --dry-run",
+    "hook:post-sync:wiki": "python -m hooks.post_sync --force --sync-wiki",
+
+    "wiki:sync": "python -m scripts.sync_to_wiki",
+    "wiki:sync:dry": "python -m scripts.sync_to_wiki --dry-run",
+    "wiki:sync:full": "python -m scripts.sync_to_wiki --full-mirror",
+    "wiki:sync:all": "python -m scripts.sync_to_wiki --include-entities",
+
+    "watch": "python -m scripts.watch_mails",
+    "watch:wiki": "python -m scripts.watch_mails --sync-wiki",
+    "watch:daemon": "python -m scripts.watch_mails --daemon",
 
     "backend:status": "python -m adapters.mailon_backend status",
     "backend:list": "python -m adapters.mailon_backend list",
@@ -40,6 +50,8 @@
 
     "pipeline": "npm run ingest && npm run extract && npm run brief",
     "pipeline:dry": "npm run ingest:dry && npm run extract:dry && npm run brief:dry",
+    "pipeline:wiki": "npm run ingest && npm run extract && npm run wiki:sync",
+    "pipeline:full": "npm run ingest && npm run extract && npm run brief && npm run wiki:sync:all",
 
     "sync": "python -m mailon.main sync",
     "sync:status": "python -m mailon.main status"
