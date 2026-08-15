@@ -4,3 +4,4 @@ beautifulsoup4>=4.12.3
 lxml>=5.2.0
 PyYAML>=6.0
 watchdog>=3.0.0
+kiwipiepy>=0.18.0

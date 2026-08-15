@@ -14,6 +14,9 @@ Usage:
     python -m scripts.extract_entities
     python -m scripts.extract_entities --dry-run
     python -m scripts.extract_entities --type people
+
+Requirements:
+    pip install kiwipiepy
 """
 from __future__ import annotations
 
@@ -32,7 +35,30 @@ from datetime import datetime
 from pathlib import Path
 from typing import Iterator
 
+try:
+    from kiwipiepy import Kiwi
+    KIWI_AVAILABLE = True
+except ImportError:
+    KIWI_AVAILABLE = False
+
 log = logging.getLogger(__name__)
+
+# Initialize Kiwi NLP if available
+_kiwi: "Kiwi | None" = None
+
+
+def get_kiwi() -> "Kiwi | None":
+    """Get or initialize Kiwi instance (singleton)."""
+    global _kiwi
+    if not KIWI_AVAILABLE:
+        return None
+    if _kiwi is None:
+        log.info("Initializing Kiwi NLP...")
+        _kiwi = Kiwi()
+        # Add common Korean names as user dictionary
+        for name in ["이경일", "허신", "김희대", "이영진", "권민우"]:
+            _kiwi.add_user_word(name, "NNP")
+    return _kiwi
 
 PROJECT_ROOT = Path(__file__).resolve().parent.parent
 DATA_DIR = PROJECT_ROOT / "data"
@@ -180,11 +206,11 @@ class EntityDB:
 
 # ---- Pattern Extractors ----
 
-# Korean name patterns (2-4 syllables)
-KOREAN_NAME_PATTERN = re.compile(r'[가-힣]{2,4}(?:\s*(?:박사|교수|선생님|님|과장|대리|부장|팀장|소장|원장|연구원|주임|담당))?')
-
 # Email pattern
 EMAIL_PATTERN = re.compile(r'[\w.+-]+@[\w.-]+\.[a-zA-Z]{2,}')
+
+# Korean name patterns (fallback when Kiwi not available)
+KOREAN_NAME_PATTERN = re.compile(r'[가-힣]{2,4}(?:\s*(?:박사|교수|선생님|님|과장|대리|부장|팀장|소장|원장|연구원|주임|담당))?')
 
 # Meeting patterns
 MEETING_PATTERNS = [
@@ -195,11 +221,33 @@ MEETING_PATTERNS = [
 # Project code patterns (common Korean research project formats)
 PROJECT_CODE_PATTERN = re.compile(r'(?:[A-Z]{2,5}[-_]?\d{4,}[-_]?\d*|과제번호[:\s]*[\w-]+)')
 
+# Common Korean words that are NOT person names (stopwords for NLP)
+KOREAN_NAME_STOPWORDS = {
+    # Common verb endings / particles
+    "있습니다", "습니다", "합니다", "입니다", "됩니다", "니다",
+    "않습니다", "겠습니다", "드립니다", "바랍니다",
+    # Common nouns that aren't names
+    "안녕", "감사", "회신", "확인", "검토", "참고", "수정", "완료",
+    "안내", "문의", "요청", "신청", "등록", "접수", "제출", "발송",
+    "메일", "이메일", "경우", "내용", "관련", "사항", "정보",
+    "회의", "미팅", "세미나", "워크샵", "발표", "행사",
+    "에서", "으로", "에게", "부터", "까지", "대해", "통해",
+    # Common organization words
+    "학회", "연구원", "연구소", "센터", "대학", "대학교",
+    "교수", "박사", "연구", "개발", "기술", "시스템",
+    # Single syllables that slip through
+    "님", "씨", "분", "건", "중", "후", "전", "내", "외",
+}
+
+# Korean title suffixes to strip
+KOREAN_TITLE_SUFFIXES = re.compile(
+    r'\s*(?:박사|교수|선생님|님|과장|대리|부장|팀장|소장|원장|연구원|주임|담당|위원|이사|사장|대표)$'
+)
+
 
 def normalize_name(name: str) -> str:
     """Normalize a Korean name for deduplication."""
-    # Remove titles/suffixes
-    name = re.sub(r'\s*(?:박사|교수|선생님|님|과장|대리|부장|팀장|소장|원장|연구원|주임|담당)$', '', name)
+    name = KOREAN_TITLE_SUFFIXES.sub('', name)
     return name.strip()
 
 
@@ -207,6 +255,95 @@ def entity_id_for(text: str) -> str:
     """Generate a stable entity ID from text."""
     normalized = text.lower().strip()
     return hashlib.md5(normalized.encode()).hexdigest()[:12]
+
+
+def is_valid_korean_name(name: str) -> bool:
+    """Check if a string is likely a valid Korean person name."""
+    # Must be 2-4 characters
+    if not (2 <= len(name) <= 4):
+        return False
+    # Must be all Korean
+    if not re.match(r'^[가-힣]+$', name):
+        return False
+    # Not in stopwords
+    if name in KOREAN_NAME_STOPWORDS:
+        return False
+    return True
+
+
+def extract_people_with_kiwi(content: str, mail_uid: str) -> Iterator[Person]:
+    """Extract person entities using Kiwi NLP."""
+    kiwi = get_kiwi()
+    if kiwi is None:
+        return
+
+    seen_names = set()
+
+    # Tokenize with Kiwi
+    try:
+        tokens = kiwi.tokenize(content)
+    except Exception as e:
+        log.debug("Kiwi tokenization failed: %s", e)
+        return
+
+    for token in tokens:
+        # NNP = Proper Noun (고유명사)
+        if token.tag == "NNP":
+            name = token.form
+            if name in seen_names:
+                continue
+            if not is_valid_korean_name(name):
+                continue
+            seen_names.add(name)
+
+            yield Person(
+                entity_type="person",
+                entity_id=entity_id_for(name),
+                name=name,
+                data={"source": "kiwi_nnp"},
+                mentions=[mail_uid],
+            )
+
+    # Also look for name patterns with titles (박사, 교수, etc.)
+    # These help identify names even if Kiwi didn't tag them as NNP
+    title_pattern = re.compile(r'([가-힣]{2,4})\s*(?:박사|교수|선생님|과장|부장|팀장|소장|원장|주임)')
+    for match in title_pattern.finditer(content):
+        name = match.group(1)
+        if name in seen_names:
+            continue
+        if not is_valid_korean_name(name):
+            continue
+        seen_names.add(name)
+
+        yield Person(
+            entity_type="person",
+            entity_id=entity_id_for(name),
+            name=name,
+            data={"source": "title_pattern"},
+            mentions=[mail_uid],
+        )
+
+
+def extract_people_regex(content: str, mail_uid: str) -> Iterator[Person]:
+    """Extract Korean names using regex (fallback when Kiwi unavailable)."""
+    names = KOREAN_NAME_PATTERN.findall(content)
+    seen_names = set()
+
+    for raw_name in names:
+        name = normalize_name(raw_name)
+        if not is_valid_korean_name(name):
+            continue
+        if name in seen_names:
+            continue
+        seen_names.add(name)
+
+        yield Person(
+            entity_type="person",
+            entity_id=entity_id_for(name),
+            name=name,
+            data={"raw": raw_name, "source": "regex"},
+            mentions=[mail_uid],
+        )
 
 
 def extract_people(content: str, mail_uid: str) -> Iterator[Person]:
@@ -245,27 +382,12 @@ def extract_people(content: str, mail_uid: str) -> Iterator[Person]:
             mentions=[mail_uid],
         )
 
-    # Extract Korean names
-    names = KOREAN_NAME_PATTERN.findall(content)
-    seen_names = set()
-
-    for raw_name in names:
-        name = normalize_name(raw_name)
-        if len(name) < 2 or name in seen_names:
-            continue
-        seen_names.add(name)
-
-        # Skip common words that look like names
-        if name in ("안녕", "감사", "회신", "확인", "검토", "참고", "수정", "완료"):
-            continue
-
-        yield Person(
-            entity_type="person",
-            entity_id=entity_id_for(name),
-            name=name,
-            data={"raw": raw_name},
-            mentions=[mail_uid],
-        )
+    # Extract Korean names using Kiwi NLP (preferred) or regex fallback
+    if KIWI_AVAILABLE:
+        yield from extract_people_with_kiwi(content, mail_uid)
+    else:
+        log.debug("Kiwi not available, using regex fallback")
+        yield from extract_people_regex(content, mail_uid)
 
 
 def extract_projects(content: str, mail_uid: str) -> Iterator[Project]:
