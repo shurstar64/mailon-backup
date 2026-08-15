@@ -137,6 +137,19 @@ def compute_hash(content: bytes) -> str:
     return hashlib.sha256(content).hexdigest()
 
 
+def fix_malformed_yaml(yaml_str: str) -> str:
+    """Fix common YAML syntax issues from mailon's writer.
+
+    Handles:
+    - attachments:[] → attachments: []
+    - key:{} → key: {}
+    """
+    # Fix missing space after colon before [ or {
+    yaml_str = re.sub(r':(\[)', r': \1', yaml_str)
+    yaml_str = re.sub(r':(\{)', r': \1', yaml_str)
+    return yaml_str
+
+
 def parse_yaml_frontmatter(content: str) -> tuple[dict, str]:
     """Parse YAML frontmatter and body from markdown content."""
     if not content.startswith("---"):
@@ -155,6 +168,9 @@ def parse_yaml_frontmatter(content: str) -> tuple[dict, str]:
 
     frontmatter_str = "\n".join(lines[1:end_idx])
     body = "\n".join(lines[end_idx + 1:])
+
+    # Fix malformed YAML from mailon's writer
+    frontmatter_str = fix_malformed_yaml(frontmatter_str)
 
     try:
         frontmatter = yaml.safe_load(frontmatter_str) or {}
@@ -225,10 +241,38 @@ def normalize_mail(mail: ParsedMail) -> str:
 
 def staging_path_for(mail: ParsedMail) -> Path:
     """Compute staging path for a mail."""
-    # Parse date
+    # Parse date from frontmatter
+    dt = None
     try:
         dt = datetime.fromisoformat(mail.date.replace('"', ''))
     except (ValueError, AttributeError):
+        pass
+
+    # Fallback: extract date from filename (YYYY-MM-DD_subject_uid.md)
+    if dt is None:
+        filename = mail.source_path.name
+        match = re.match(r"(\d{4})-(\d{2})-(\d{2})_", filename)
+        if match:
+            try:
+                dt = datetime(int(match.group(1)), int(match.group(2)), int(match.group(3)))
+            except ValueError:
+                pass
+
+    # Final fallback: use source file's parent directory structure
+    if dt is None:
+        # Try to extract from path like data/mails/2026/03/file.md
+        parts = mail.source_path.parts
+        for i, part in enumerate(parts):
+            if part == "mails" and i + 2 < len(parts):
+                try:
+                    year = int(parts[i + 1])
+                    month = int(parts[i + 2])
+                    dt = datetime(year, month, 1)
+                    break
+                except (ValueError, IndexError):
+                    pass
+
+    if dt is None:
         dt = datetime.now()
 
     yyyy = f"{dt.year:04d}"
@@ -239,13 +283,29 @@ def staging_path_for(mail: ParsedMail) -> Path:
     return STAGING_MAIL_DIR / yyyy / mm / filename
 
 
+def is_staging_file(file_path: Path) -> bool:
+    """Check if file is a staging file (not an original mailon file)."""
+    try:
+        content = file_path.read_text(encoding="utf-8")[:500]
+        # Staging files have 'source:' field, originals have 'collected_at:'
+        return "source:" in content and "collected_at:" not in content
+    except Exception:
+        return False
+
+
 def iter_mail_files() -> Iterator[Path]:
-    """Iterate over all mail markdown files."""
+    """Iterate over all mail markdown files (excluding staging-style files)."""
     if not MAILS_DIR.exists():
         log.warning("Mails directory does not exist: %s", MAILS_DIR)
         return
 
     for md_file in MAILS_DIR.rglob("*.md"):
+        # Skip README and staging files
+        if md_file.name == "README.md":
+            continue
+        if is_staging_file(md_file):
+            log.debug("Skipping staging file: %s", md_file.name)
+            continue
         yield md_file
 
 
@@ -253,6 +313,7 @@ def ingest_mail(
     mail_path: Path,
     db: IngestDB,
     dry_run: bool = False,
+    force: bool = False,
 ) -> tuple[bool, str]:
     """
     Ingest a single mail file.
@@ -269,9 +330,9 @@ def ingest_mail(
 
     content_hash = compute_hash(content)
 
-    # Check if already ingested with same hash
+    # Check if already ingested with same hash (skip if force)
     stored_hash = db.get_hash(rel_path)
-    if stored_hash == content_hash:
+    if not force and stored_hash == content_hash:
         return False, "unchanged"
 
     # Parse mail
@@ -308,6 +369,7 @@ def main() -> int:
     """Main entry point."""
     parser = argparse.ArgumentParser(description="Ingest mail files into LLM Wiki staging")
     parser.add_argument("--dry-run", action="store_true", help="Don't write any files")
+    parser.add_argument("--force", action="store_true", help="Re-ingest all files, ignore hash check")
     parser.add_argument("--verbose", "-v", action="store_true", help="Verbose output")
     args = parser.parse_args()
 
@@ -322,6 +384,8 @@ def main() -> int:
 
     if args.dry_run:
         log.info("DRY RUN - no files will be written")
+    if args.force:
+        log.info("FORCE mode - re-ingesting all files")
 
     # Initialize database
     db = IngestDB(INGEST_DB)
@@ -331,7 +395,7 @@ def main() -> int:
 
     for mail_path in iter_mail_files():
         stats["processed"] += 1
-        was_updated, reason = ingest_mail(mail_path, db, dry_run=args.dry_run)
+        was_updated, reason = ingest_mail(mail_path, db, dry_run=args.dry_run, force=args.force)
 
         if was_updated:
             if reason == "new":

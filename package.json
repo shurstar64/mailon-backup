@@ -10,6 +10,7 @@
 
     "ingest": "python -m scripts.ingest_mail",
     "ingest:dry": "python -m scripts.ingest_mail --dry-run",
+    "ingest:force": "python -m scripts.ingest_mail --force",
     "ingest:verbose": "python -m scripts.ingest_mail --verbose",
 
     "extract": "python -m scripts.extract_entities",
