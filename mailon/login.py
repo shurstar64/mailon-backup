@@ -130,6 +130,15 @@ def login(browser: AgentBrowser, cfg: Config) -> None:
       5. Submit
       6. Wait for URL change away from /integrated/login
     """
+    # Check if already logged in (on mail page)
+    try:
+        current_url = browser.current_url()
+        if "/mail" in current_url and "mailon.kr" in current_url:
+            log.info("already logged in at %s; skipping login flow", current_url)
+            return
+    except BrowserError:
+        pass  # No page loaded yet, proceed with login
+
     log.info("opening login page: %s", cfg.login_url)
     browser.open(cfg.login_url)
     log.info("opened; waiting for DOM")

@@ -67,12 +67,17 @@ class AgentBrowser:
         headless: bool = True,
         executable: str | None = None,
         timeout: int = 90,
+        cdp_port: int | None = None,
     ) -> None:
         self.session_name = session_name
         self.headless = headless
         self.executable = executable or _resolve_agent_browser()
         self.timeout = timeout
+        # CDP port to connect to an existing Chrome instance
+        self.cdp_port = cdp_port or int(os.environ.get("AGENT_BROWSER_CDP_PORT", 0)) or None
         log.debug("agent-browser executable: %s", self.executable)
+        if self.cdp_port:
+            log.debug("agent-browser CDP port: %d", self.cdp_port)
 
     # ---------------------------------------------------------------- core
 
@@ -88,6 +93,8 @@ class AgentBrowser:
         string that we build ourselves with proper quoting.
         """
         cmd_parts = [self.executable, "--session", self.session_name]
+        if self.cdp_port:
+            cmd_parts.extend(["--cdp", str(self.cdp_port)])
         if not self.headless:
             cmd_parts.append("--headed")
         cmd_parts.extend(args)
