@@ -1,0 +1,50 @@
+{
+  "name": "mailon-llm-wiki",
+  "version": "1.0.0",
+  "description": "MailON to LLM Wiki integration layer",
+  "private": true,
+  "scripts": {
+    "check": "python -m scripts.check_mail_sync",
+    "check:json": "python -m scripts.check_mail_sync --json",
+    "check:verbose": "python -m scripts.check_mail_sync --verbose",
+
+    "ingest": "python -m scripts.ingest_mail",
+    "ingest:dry": "python -m scripts.ingest_mail --dry-run",
+    "ingest:verbose": "python -m scripts.ingest_mail --verbose",
+
+    "extract": "python -m scripts.extract_entities",
+    "extract:dry": "python -m scripts.extract_entities --dry-run",
+    "extract:people": "python -m scripts.extract_entities --type people",
+    "extract:projects": "python -m scripts.extract_entities --type projects",
+    "extract:meetings": "python -m scripts.extract_entities --type meetings",
+
+    "search": "python -m scripts.search_mail",
+    "search:json": "python -m scripts.search_mail --json",
+
+    "brief": "python -m scripts.daily_brief",
+    "brief:dry": "python -m scripts.daily_brief --dry-run",
+    "brief:week": "python -m scripts.daily_brief --days 7",
+    "brief:json": "python -m scripts.daily_brief --json",
+
+    "hook:post-sync": "python -m hooks.post_sync",
+    "hook:post-sync:force": "python -m hooks.post_sync --force",
+    "hook:post-sync:dry": "python -m hooks.post_sync --dry-run",
+
+    "backend:status": "python -m adapters.mailon_backend status",
+    "backend:list": "python -m adapters.mailon_backend list",
+    "backend:search": "python -m adapters.mailon_backend search --query",
+
+    "test": "python -m pytest tests/ -v",
+    "test:coverage": "python -m pytest tests/ -v --cov=scripts --cov=hooks --cov=adapters --cov-report=term-missing",
+    "test:watch": "python -m pytest tests/ -v --watch",
+
+    "pipeline": "npm run ingest && npm run extract && npm run brief",
+    "pipeline:dry": "npm run ingest:dry && npm run extract:dry && npm run brief:dry",
+
+    "sync": "python -m mailon.main sync",
+    "sync:status": "python -m mailon.main status"
+  },
+  "keywords": ["mailon", "llm", "wiki", "email", "backup"],
+  "author": "",
+  "license": "MIT"
+}
