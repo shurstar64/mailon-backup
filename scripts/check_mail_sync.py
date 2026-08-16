@@ -486,6 +486,82 @@ def check_data_consistency() -> CheckResult:
     )
 
 
+def check_integration_safety() -> CheckResult:
+    """Check integration-related safety constraints."""
+    warnings = []
+    details = {}
+
+    # 1. Export cursor validation - cursor should not exceed max rowid
+    cursor_file = DATA_DIR / "export_cursor.txt"
+    export_cursor = 0
+    if cursor_file.exists():
+        try:
+            export_cursor = int(cursor_file.read_text().strip())
+        except (ValueError, OSError):
+            pass
+    details["export_cursor"] = export_cursor
+
+    ingest_db_max_rowid = 0
+    if INGEST_DB.exists():
+        with db_conn(INGEST_DB) as conn:
+            if conn:
+                row = conn.execute("SELECT MAX(rowid) FROM ingested_files").fetchone()
+                ingest_db_max_rowid = row[0] or 0
+    details["ingest_db_max_rowid"] = ingest_db_max_rowid
+
+    if export_cursor > ingest_db_max_rowid:
+        warnings.append(f"커서 추월: {export_cursor} > {ingest_db_max_rowid}")
+
+    # 2. Baseline mails_dir check - ensure no unexpected growth
+    baseline_file = DATA_DIR / "baseline_mails_count.txt"
+    baseline_mails_dir_count = 0
+    if baseline_file.exists():
+        try:
+            baseline_mails_dir_count = int(baseline_file.read_text().strip())
+        except (ValueError, OSError):
+            pass
+    details["baseline_mails_dir"] = baseline_mails_dir_count
+
+    mails_dir_count = len(list(MAILS_DIR.rglob("*.md"))) if MAILS_DIR.exists() else 0
+    details["current_mails_dir"] = mails_dir_count
+
+    if baseline_mails_dir_count > 0 and mails_dir_count != baseline_mails_dir_count:
+        diff = mails_dir_count - baseline_mails_dir_count
+        if diff > 0:
+            warnings.append(f"통합 후 mails_dir 증가 {diff}건")
+        else:
+            warnings.append(f"통합 후 mails_dir 감소 {abs(diff)}건")
+
+    # 3. Consumer write protection - check for unauthorized writes in protected paths
+    protected_paths = [DATA_DIR / "mails", DATA_DIR / "state.db"]
+    consumer_write_count = 0
+    write_marker = DATA_DIR / ".consumer_writes.log"
+    if write_marker.exists():
+        try:
+            consumer_write_count = len(write_marker.read_text().strip().splitlines())
+        except OSError:
+            pass
+    details["consumer_writes"] = consumer_write_count
+
+    if consumer_write_count > 0:
+        warnings.append(f"소비자가 보호 경로에 씀 ({consumer_write_count}건)")
+
+    if warnings:
+        return CheckResult(
+            name="integration_safety",
+            status="warning",
+            message="; ".join(warnings),
+            details=details
+        )
+
+    return CheckResult(
+        name="integration_safety",
+        status="ok",
+        message=f"OK: 통합 안전성 확인 (cursor:{export_cursor}, baseline:{baseline_mails_dir_count})",
+        details=details
+    )
+
+
 def check_logs() -> CheckResult:
     """Check log files."""
     if not LOGS_DIR.exists():
@@ -553,6 +629,7 @@ def run_all_checks() -> SyncStatus:
         check_staging_dir,
         check_sync_recency,
         check_data_consistency,
+        check_integration_safety,
         check_logs,
     ]
 
