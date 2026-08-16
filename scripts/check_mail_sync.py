@@ -411,6 +411,81 @@ def check_sync_recency() -> CheckResult:
         )
 
 
+def check_data_consistency() -> CheckResult:
+    """Cross-validate data counts between sources with tolerance."""
+    warnings = []
+    details = {}
+
+    # Gather counts
+    mails_dir_count = len(list(MAILS_DIR.rglob("*.md"))) if MAILS_DIR.exists() else 0
+    details["mails_dir"] = mails_dir_count
+
+    # state.db counts
+    state_db_messages = 0
+    state_db_attachments = 0
+    if STATE_DB.exists():
+        with db_conn(STATE_DB) as conn:
+            if conn:
+                state_db_messages = get_table_count(conn, "messages")
+                state_db_attachments = get_table_count(conn, "attachments")
+    details["state_db_messages"] = state_db_messages
+    details["state_db_attachments"] = state_db_attachments
+
+    # ingest.db count
+    ingest_db_count = 0
+    if INGEST_DB.exists():
+        with db_conn(INGEST_DB) as conn:
+            if conn:
+                ingest_db_count = get_table_count(conn, "ingested_files")
+    details["ingest_db"] = ingest_db_count
+
+    # attachments dir count
+    attachments_dir_count = 0
+    if ATTACHMENTS_DIR.exists():
+        attachments_dir_count = len([f for f in ATTACHMENTS_DIR.rglob("*") if f.is_file()])
+    details["attachments_dir"] = attachments_dir_count
+
+    # staging leak check (data/mails should not contain staging-like patterns)
+    staging_leak_count = 0
+    if MAILS_DIR.exists():
+        for f in MAILS_DIR.rglob("*.md"):
+            # Check for staging patterns that shouldn't be in data/mails
+            if "staging" in f.name.lower() or f.name.startswith("_"):
+                staging_leak_count += 1
+    details["staging_leaks"] = staging_leak_count
+
+    # Tolerance-based assertions (실측 기반 조정: 2026-08-16)
+    # mails_dir는 과거 파일 포함하여 state_db보다 많을 수 있음
+    if mails_dir_count < state_db_messages * 0.9:
+        warnings.append(f"mails_dir({mails_dir_count}) < state_db({state_db_messages})의 90%")
+
+    # 첨부파일: 실패/재시도로 인한 차이 허용 (실측: 211)
+    if abs(attachments_dir_count - state_db_attachments) >= 300:
+        warnings.append(f"첨부 파일 수 불일치: {attachments_dir_count} vs {state_db_attachments}")
+
+    # 인제스천: staging/mail 기준, 80% 이상이면 정상 (실측: 83.9%)
+    if state_db_messages > 0 and ingest_db_count < state_db_messages * 0.80:
+        warnings.append(f"인제스천 누락 의심: {ingest_db_count}/{state_db_messages} ({ingest_db_count*100//state_db_messages}%)")
+
+    if staging_leak_count > 0:
+        warnings.append(f"staging 누출 {staging_leak_count}건")
+
+    if warnings:
+        return CheckResult(
+            name="data_consistency",
+            status="warning",
+            message="; ".join(warnings),
+            details=details
+        )
+
+    return CheckResult(
+        name="data_consistency",
+        status="ok",
+        message=f"OK: 데이터 정합성 확인 (mails:{mails_dir_count}, ingested:{ingest_db_count})",
+        details=details
+    )
+
+
 def check_logs() -> CheckResult:
     """Check log files."""
     if not LOGS_DIR.exists():
@@ -477,6 +552,7 @@ def run_all_checks() -> SyncStatus:
         check_attachments_dir,
         check_staging_dir,
         check_sync_recency,
+        check_data_consistency,
         check_logs,
     ]
 

@@ -221,11 +221,67 @@ MEETING_PATTERNS = [
 # Project code patterns (common Korean research project formats)
 PROJECT_CODE_PATTERN = re.compile(r'(?:[A-Z]{2,5}[-_]?\d{4,}[-_]?\d*|과제번호[:\s]*[\w-]+)')
 
+# Title suffixes - not names themselves
+TITLE_STOPWORDS = {"교수", "박사", "님", "선생", "귀하", "담당자", "씨", "과장", "부장", "팀장", "대리"}
+
+# Organization name patterns (조직명) - not person names
+ORG_SUFFIXES = ("학회", "연구원", "연구소", "재단", "협회", "공단", "공사", "위원회",
+                "센터", "원", "부", "처", "청", "국", "실", "팀", "과")
+ORG_NAMES = {
+    # 학회
+    "대한기계학회", "한국센서학회", "대한전자공학회", "한국물리학회", "한국화학회",
+    "대한의학회", "한국정보과학회", "대한건축학회", "한국전기학회", "대한토목학회",
+    # 연구기관
+    "한국연구재단", "한국과학기술원", "한국기계연구원", "한국전자통신연구원",
+    "한국원자력연구원", "한국생명공학연구원", "한국표준과학연구원", "한국재료연구원",
+    "한국에너지기술연구원", "한국건설기술연구원", "한국식품연구원", "국회예산정책처",
+    # 정부/공공기관
+    "과학기술정보통신부", "산업통상자원부", "환경부", "국토교통부", "보건복지부",
+    "한국연구재단 홍보전략팀", "특허청", "기상청", "통계청",
+    # 기타 조직
+    "삼성전자", "현대자동차", "LG전자", "SK하이닉스", "포스코",
+}
+
+# Email-based false positives (이메일 prefix)
+EMAIL_FALSE_POSITIVES = {
+    "info", "sales", "support", "admin", "contact", "help", "service", "news",
+    "marketing", "hr", "recruit", "apply", "subscribe", "unsubscribe", "noreply",
+    "webmaster", "postmaster", "abuse", "security", "billing", "invoice",
+    "professor", "editor", "editorial", "reviewer", "submission", "journal",
+    "conference", "event", "register", "registration", "eresponse", "acmcasereport",
+}
+
+# Korean place names (지명) - not person names
+PLACE_NAMES = {
+    # 특별시/광역시
+    "서울", "부산", "대구", "인천", "광주", "대전", "울산", "세종",
+    "서울시", "부산시", "대구시", "인천시", "광주시", "대전시", "울산시", "세종시",
+    # 도
+    "경기", "강원", "충북", "충남", "전북", "전남", "경북", "경남", "제주",
+    "경기도", "강원도", "충청북도", "충청남도", "전라북도", "전라남도", "경상북도", "경상남도", "제주도",
+    # 주요 시/군
+    "수원", "성남", "고양", "용인", "안양", "안산", "화성", "평택", "시흥", "파주",
+    "청주", "천안", "아산", "전주", "포항", "창원", "김해", "구미", "양산", "진주",
+    # 서울 구
+    "강남구", "강동구", "강북구", "강서구", "관악구", "광진구", "구로구", "금천구",
+    "노원구", "도봉구", "동대문구", "동작구", "마포구", "서대문구", "서초구", "성동구",
+    "성북구", "송파구", "양천구", "영등포구", "용산구", "은평구", "종로구", "중구", "중랑구",
+    "강남", "강동", "강북", "강서", "관악", "광진", "구로", "금천",
+    "노원", "도봉", "동대문", "동작", "마포", "서대문", "서초", "성동",
+    "성북", "송파", "양천", "영등포", "용산", "은평", "종로", "중랑",
+    # 기타 구/동
+    "유성구", "대덕구", "동구", "서구", "남구", "북구", "중구", "수성구", "달서구",
+    "유성", "대덕", "수성", "달서", "해운대", "사하", "부산진", "연제", "수영",
+    # 도로명
+    "테헤란로", "강남대로", "서초대로", "올림픽로", "영동대로", "삼성로",
+    # 해외
+    "미국", "일본", "중국", "유럽", "독일", "영국", "프랑스", "호주", "캐나다",
+    # 기타 지명
+    "한국", "대한", "국내", "국외", "해외", "아시아", "북미", "남미",
+}
+
 # Common Korean words that are NOT person names (stopwords for NLP)
 KOREAN_NAME_STOPWORDS = {
-    # Common verb endings / particles
-    "있습니다", "습니다", "합니다", "입니다", "됩니다", "니다",
-    "않습니다", "겠습니다", "드립니다", "바랍니다",
     # Common nouns that aren't names
     "안녕", "감사", "회신", "확인", "검토", "참고", "수정", "완료",
     "안내", "문의", "요청", "신청", "등록", "접수", "제출", "발송",
@@ -234,10 +290,15 @@ KOREAN_NAME_STOPWORDS = {
     "에서", "으로", "에게", "부터", "까지", "대해", "통해",
     # Common organization words
     "학회", "연구원", "연구소", "센터", "대학", "대학교",
-    "교수", "박사", "연구", "개발", "기술", "시스템",
+    "연구", "개발", "기술", "시스템", "프로젝트", "사업",
     # Single syllables that slip through
-    "님", "씨", "분", "건", "중", "후", "전", "내", "외",
-}
+    "분", "건", "중", "후", "전", "내", "외", "용", "상", "하",
+    # Misc false positives observed
+    "웹진", "호라이즌", "채용중", "원클릭", "필참", "데스크톱",
+} | TITLE_STOPWORDS | PLACE_NAMES | ORG_NAMES | EMAIL_FALSE_POSITIVES
+
+# Verb/particle suffixes - words ending with these are not names
+INVALID_SUFFIXES = ("니다", "습니", "세요", "어요", "아요", "네요", "군요", "에요")
 
 # Korean title suffixes to strip
 KOREAN_TITLE_SUFFIXES = re.compile(
@@ -257,6 +318,20 @@ def entity_id_for(text: str) -> str:
     return hashlib.md5(normalized.encode()).hexdigest()[:12]
 
 
+def is_organization_name(name: str) -> bool:
+    """Check if a string is likely an organization name."""
+    # Check explicit org names
+    if name in ORG_NAMES:
+        return True
+    # Check org suffixes (학회, 연구원, etc.)
+    if name.endswith(ORG_SUFFIXES):
+        return True
+    # Check email false positives (case-insensitive)
+    if name.lower() in EMAIL_FALSE_POSITIVES:
+        return True
+    return False
+
+
 def is_valid_korean_name(name: str) -> bool:
     """Check if a string is likely a valid Korean person name."""
     # Must be 2-4 characters
@@ -267,6 +342,12 @@ def is_valid_korean_name(name: str) -> bool:
         return False
     # Not in stopwords
     if name in KOREAN_NAME_STOPWORDS:
+        return False
+    # Not ending with verb/particle suffixes
+    if name.endswith(INVALID_SUFFIXES):
+        return False
+    # Not an organization name
+    if is_organization_name(name):
         return False
     return True
 
@@ -364,6 +445,17 @@ def extract_people(content: str, mail_uid: str) -> Iterator[Person]:
         if match:
             name = match.group(1).strip()
 
+        # Use email prefix as fallback name
+        email_prefix = email.split('@')[0]
+        final_name = name or email_prefix
+
+        # Skip if name looks like organization or false positive
+        if is_organization_name(final_name):
+            continue
+        # Skip common email prefixes
+        if email_prefix.lower() in EMAIL_FALSE_POSITIVES:
+            continue
+
         # Extract domain as organization hint
         org = ""
         domain_match = re.search(r'@([\w.-]+)', email)
@@ -375,10 +467,10 @@ def extract_people(content: str, mail_uid: str) -> Iterator[Person]:
         yield Person(
             entity_type="person",
             entity_id=entity_id_for(email),
-            name=name or email.split('@')[0],
+            name=final_name,
             email=email,
             organization=org,
-            data={"email": email, "organization": org},
+            data={"email": email, "organization": org, "source": "email"},
             mentions=[mail_uid],
         )
 

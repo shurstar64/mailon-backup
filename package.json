@@ -45,6 +45,9 @@
     "backend:list": "python -m adapters.mailon_backend list",
     "backend:search": "python -m adapters.mailon_backend search --query",
 
+    "export": "python -m scripts.export_for_agents",
+    "export:all": "python -m scripts.export_for_agents 0 10000",
+
     "test": "python -m pytest tests/ -v",
     "test:coverage": "python -m pytest tests/ -v --cov=scripts --cov=hooks --cov=adapters --cov-report=term-missing",
     "test:watch": "python -m pytest tests/ -v --watch",
