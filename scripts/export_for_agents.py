@@ -74,6 +74,10 @@ def main() -> int:
     limit = int(sys.argv[2]) if len(sys.argv) > 2 else 500
 
     result = export(cursor, limit)
+
+    # Handle Windows console encoding
+    import io
+    sys.stdout = io.TextIOWrapper(sys.stdout.buffer, encoding='utf-8', errors='replace')
     print(json.dumps(result, ensure_ascii=False, indent=2))
     return 0
 
